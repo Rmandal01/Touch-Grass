@@ -21,6 +21,9 @@ dependencies:
   # Backend (auth, Postgres, Edge Functions, Realtime)
   supabase_flutter: ^2.5.6
 
+  # Android per-app screen time via UsageStatsManager
+  app_usage: ^4.1.0
+
   cupertino_icons: ^1.0.6
 
 dev_dependencies:

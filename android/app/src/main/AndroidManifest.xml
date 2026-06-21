@@ -1,4 +1,10 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Required to read real per-app screen time via UsageStatsManager.
+         The user must additionally grant "Usage access" in system settings. -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
     <application
         android:label="growflow"
         android:name="${applicationName}"
@@ -12,18 +18,12 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
-            <!-- Specifies an Android theme to apply to this Activity as soon as
-                 the Android process has started. This theme is visible to the user
-                 while the Flutter UI initializes. After that, this theme continues
-                 to determine the Window background behind the Flutter UI. -->
             <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
             <!-- Disable Flutter's built-in deep-link routing so the OAuth callback
-                 (io.supabase.growflow://login-callback/) is NOT pushed into go_router
-                 (which would show "Page Not Found"). supabase_flutter consumes the
-                 callback itself via app_links and creates the session. -->
+                 is NOT pushed into go_router. supabase_flutter consumes it directly. -->
             <meta-data
               android:name="flutter_deeplinking_enabled"
               android:value="false"
@@ -32,11 +32,7 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Google OAuth deep-link callback. Supabase redirects back to this
-                 custom scheme after sign-in; supabase_flutter catches the link and
-                 completes the PKCE exchange. The scheme/host must match
-                 kMobileAuthRedirect in lib/core/constants.dart and be added to the
-                 project's allowed redirect URLs in the Supabase dashboard. -->
+            <!-- Google OAuth deep-link callback. -->
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
@@ -44,17 +40,10 @@
                 <data android:scheme="io.supabase.growflow" android:host="login-callback"/>
             </intent-filter>
         </activity>
-        <!-- Don't delete the meta-data below.
-             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
-    <!-- Required to query activities that can process text, see:
-         https://developer.android.com/training/package-visibility and
-         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
-
-         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
