@@ -4,8 +4,9 @@ GrowFlow is a productivity app that grows a virtual garden. Productive time grow
 plant; doomscrolling and brainrot time make it wilt and eventually die. Productivity is
 judged by Claude, which analyzes the user's recent activity (real browser usage captured by
 a Chrome extension), the time of day and day of week, and a user-stated mood/goal/task
-(for example: vacation, locked-in, finishing work). A score from 0 to 100 maps to plant
-growth (+3) or decay (-1).
+(for example: vacation, locked-in, finishing work). A score from 0 to 100 is accompanied by
+a growth delta that Claude decides: positive deltas grow the plant, negative deltas make it
+wilt, with the magnitude reflecting how productive or unproductive the window was.
 
 The repo folder is named Touch-Grass; the product name is GrowFlow.
 
@@ -130,7 +131,9 @@ own rows. The deferred garden tables relax this to garden members.
 ## Scoring and growth rules
 
 - Score is 0-100, produced by Claude.
-- A productive evaluation grows the plant by +3; an unproductive one decays it by -1.
+- Claude decides the growth delta for each evaluation (positive to grow, negative to wilt);
+  the magnitude is its call and should scale with how productive/unproductive the window was,
+  not a fixed +3/-1 step.
 - Do not penalize breaks. Only penalize long continuous unproductive stretches.
 - Mood-aware leniency: vacation is lenient, locked-in is strict, finishing work is
   strict-but-fair.
@@ -140,9 +143,10 @@ own rows. The deferred garden tables relax this to garden members.
   and the active mood/goal.
 
 analyze-productivity calls Claude with a single forced tool, report_productivity_score,
-whose input is { score, classification, delta, breaks_ok, advice, message_kind }. The
-function reads the tool input, clamps delta to the allowed -1 or +3 band, writes a scores
-row, then updates growth:
+whose input is { score, classification, delta, breaks_ok, advice, message_kind }. The delta
+is whatever Claude returns; the function does not snap it to a fixed band (it may apply a
+generous sanity guard against runaway values, but the magnitude is Claude's decision). It
+writes a scores row, then updates growth:
 
 - new_growth = clamp(growth_points + delta, 0, 100).
 - Stage buckets: 0 dead; 1-15 wilting; 16-30 sprout; 31-50 seedling; 51-70 young;
