@@ -28,7 +28,7 @@ export const STORAGE_KEYS = {
  * the service worker is allowed to fetch it. Until then, uploads are skipped (see
  * background.ts) and events are only logged.
  */
-export const INGEST_URL = "https://website-rmandals-projects.vercel.app/api/ingest";
+export const INGEST_URL = "http://localhost:3000/api/ingest";
 
 /** How often (ms) the service worker samples the active tab / flushes its buffer. */
 export const SAMPLE_INTERVAL_MS = 15_000;

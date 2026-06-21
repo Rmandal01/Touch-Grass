@@ -10,6 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin, resolvePairingToken } from "@/lib/server/supabaseAdmin";
+import { getTask } from "@/lib/server/taskState";
 
 export const runtime = "nodejs";
 
@@ -31,8 +32,15 @@ export async function GET(request: Request) {
 
   if (!row) return NextResponse.json({ connected: true, plant: null });
 
+  // Active-task info (in-memory), incl. points earned so far this session.
+  const t = getTask(token);
+  const task = t
+    ? { task: t.task, active: t.active, earned: (row.growth_points as number) - t.startGrowth }
+    : null;
+
   return NextResponse.json({
     connected: true,
+    task,
     plant: {
       plantType: row.plant_type,
       growthPoints: row.growth_points,

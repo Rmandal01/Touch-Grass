@@ -28,6 +28,7 @@ import { getSupabaseAdmin, resolvePairingToken } from "@/lib/server/supabaseAdmi
 import { scoreActivity } from "@/lib/server/scoring";
 import { applyDelta } from "@/lib/plant";
 import { addEvents } from "@/lib/server/liveState";
+import { getTask } from "@/lib/server/taskState";
 
 export const runtime = "nodejs";
 
@@ -96,8 +97,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, received: 0, mode: "supabase" });
   }
 
-  // Score this batch with Claude (or the mock), using the user's current mood/goal.
-  const result = await scoreActivity(events, { mood: row.current_mood, goal: row.current_goal });
+  // Points only move while a task is active. No task -> store activity but don't score.
+  const task = getTask(pairingToken);
+  if (!task || !task.active) {
+    return NextResponse.json({
+      ok: true,
+      received: events.length,
+      mode: "supabase",
+      ignored: true,
+      reason: "no active task",
+    });
+  }
+
+  // Score this batch with Claude (or the mock), judged against the active task.
+  const result = await scoreActivity(events, { mood: task.mood, goal: task.task });
 
   const current: Plant = {
     plantType: row.plant_type as PlantType,
