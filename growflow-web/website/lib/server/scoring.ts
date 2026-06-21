@@ -35,18 +35,60 @@ export async function scoreActivity(
   mood: MoodSession
 ): Promise<ScoreResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
+  let result: ScoreResult;
   if (!apiKey) {
     // No key configured — score locally so the demo still produces real grow/wilt behavior.
-    return evaluateMock(events, mood);
+    result = evaluateMock(events, mood);
+  } else {
+    try {
+      result = await scoreWithClaude(events, mood, apiKey);
+    } catch (err) {
+      console.error("[analyze] Claude scoring failed, using mock:", err);
+      result = evaluateMock(events, mood);
+    }
   }
+  return enforceCategoryDelta(events, result);
+}
 
-  try {
-    return await scoreWithClaude(events, mood, apiKey);
-  } catch (err) {
-    // Never hard-fail the request; fall back to the heuristic and log for debugging.
-    console.error("[analyze] Claude scoring failed, using mock:", err);
-    return evaluateMock(events, mood);
+/**
+ * Make the point change deterministic and predictable based on the sites in the window — the
+ * model still writes the advice, but it doesn't get to overthink the up/down decision:
+ *   - distraction sites dominate (YouTube/social/video ≥ productive time) -> -1 (red alert)
+ *   - productive sites dominate (docs/GitHub/etc.)                        -> +3
+ *   - neither (just neutral browsing, e.g. the app's own tab)            ->  0 (no change)
+ * The "neutral -> 0" rule is the fix for "everything goes negative": neutral browsing no
+ * longer wilts the plant.
+ */
+function enforceCategoryDelta(events: ActivityEvent[], result: ScoreResult): ScoreResult {
+  const productive = sumBy(events, (e) => (e.category === "productive" ? e.durationSeconds : 0));
+  const unproductive = sumBy(events, (e) =>
+    e.category === "unproductive" ? e.durationSeconds : 0
+  );
+
+  if (unproductive > 0 && unproductive >= productive) {
+    return {
+      ...result,
+      delta: -1,
+      score: Math.min(result.score, 35),
+      classification: unproductive > productive * 3 ? "doomscrolling" : "distracted",
+      messageKind: "reminder",
+    };
   }
+  if (productive > unproductive && productive > 0) {
+    return {
+      ...result,
+      delta: 3,
+      score: Math.max(result.score, 65),
+      classification: unproductive === 0 ? "deep_work" : "productive",
+      messageKind: "congrats",
+    };
+  }
+  // Neutral browsing — don't punish it, don't reward it.
+  return { ...result, delta: 0, score: 50, classification: "neutral", messageKind: "advice" };
+}
+
+function sumBy(events: ActivityEvent[], fn: (e: ActivityEvent) => number): number {
+  return events.reduce((acc, e) => acc + fn(e), 0);
 }
 
 async function scoreWithClaude(
@@ -66,10 +108,13 @@ async function scoreWithClaude(
       {
         name: "report_productivity_score",
         description:
-          "Report the productivity score for this activity window, following the GrowFlow " +
-          "rules: short breaks are fine and must NOT be penalized; only long continuous " +
-          "unproductive stretches hurt. Mood adjusts leniency (vacation = lenient, " +
-          "locked-in = strict, finishing work = strict but fair).",
+          "Report the productivity score for this activity window. The user has an ACTIVE " +
+          "focus task. Time on entertainment/social/video sites (YouTube, TikTok, Instagram, " +
+          "Reddit, Netflix, etc.) is a distraction FROM that task: if it makes up most of the " +
+          "window, score it low (under 40), classify as distracted or doomscrolling, and set " +
+          "delta -1. A brief break amid real work is fine and shouldn't be punished, but do " +
+          "not reward distraction. Mood adjusts leniency (vacation = lenient, locked-in = " +
+          "strict, finishing work = strict but fair).",
         input_schema: {
           type: "object",
           properties: {
@@ -143,15 +188,16 @@ function buildPrompt(events: ActivityEvent[], mood: MoodSession): string {
     "Score this person's recent browser activity for productivity.",
     "",
     `Time: ${now.toLocaleString()} (consider time of day and day of week).`,
-    `Mood / goal: "${mood.mood}" — goal: "${mood.goal}".`,
+    `Active focus task: "${mood.goal}" (mood: "${mood.mood}").`,
     "",
     "Active time per site:",
     lines || "(no activity)",
     "",
-    "Rules: do not penalize short breaks; only penalize long continuous unproductive",
-    "stretches. Productive sites include docs editors, Canvas, email, GitHub, and work use",
-    "of ChatGPT. Unproductive sites include social and video doomscroll sites. Then call",
-    "report_productivity_score.",
+    "Productive sites: docs editors, Canvas, email, GitHub, work ChatGPT. Distraction sites:",
+    "YouTube, TikTok, Instagram, Reddit, Netflix, social/video. The user is trying to do the",
+    "task above — if most of this window was distraction sites, score it low (under 40), set",
+    "delta -1, and classify distracted/doomscrolling. A short break amid real work is fine.",
+    "Then call report_productivity_score.",
   ].join("\n");
 }
 

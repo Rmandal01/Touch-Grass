@@ -34,6 +34,59 @@ interface Session {
 }
 
 const FLUSH_ALARM = "growflow-flush";
+const FLUSH_DEBOUNCE_MS = 2500; // batch a burst of fast tab switches into one upload
+
+// Serialize session rotations so rapid tab switches can't race (which would lose or
+// double-count visited tabs). Every rotate runs strictly after the previous one finishes.
+let opQueue: Promise<void> = Promise.resolve();
+function serialize(fn: () => Promise<void>): Promise<void> {
+  opQueue = opQueue.then(fn, fn);
+  return opQueue;
+}
+
+// Debounced flush: fires once switching settles, so a fast burst becomes one scored window.
+// setTimeout in a service worker is fine while events keep it alive; the alarm is the backstop.
+let flushTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleFlush(): void {
+  if (flushTimer) clearTimeout(flushTimer);
+  flushTimer = setTimeout(() => {
+    flushTimer = undefined;
+    void flushPending();
+  }, FLUSH_DEBOUNCE_MS);
+}
+
+// Guard against two flushes overlapping (debounce timer vs. periodic alarm).
+let flushing = false;
+
+// Distraction sites — for an INSTANT popup the moment you land on one (no server round-trip).
+const DISTRACTION_SITES = [
+  "youtube.com",
+  "tiktok.com",
+  "instagram.com",
+  "facebook.com",
+  "twitter.com",
+  "x.com",
+  "reddit.com",
+  "netflix.com",
+  "twitch.tv",
+  "pinterest.com",
+];
+function isDistraction(domain: string): boolean {
+  const d = domain.toLowerCase();
+  return DISTRACTION_SITES.some((s) => d.includes(s));
+}
+// Remember the last distraction site we alerted on, so we alert once per arrival (not on a loop).
+let lastDistractDomain: string | null = null;
+
+function notifyDistraction(domain: string): void {
+  chrome.notifications.create("growflow-distract", {
+    type: "basic",
+    iconUrl: chrome.runtime.getURL("icon128.png"),
+    title: "GrowFlow:  −1 point",
+    message: `${domain} is a distraction — back to your task!`,
+    priority: 2,
+  });
+}
 
 // --- lifecycle -------------------------------------------------------------------------
 
@@ -48,29 +101,31 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // --- events that start/stop a session --------------------------------------------------
 
-// User switched to a different tab. Flush right away so the plant reacts promptly.
-chrome.tabs.onActivated.addListener(async () => {
-  await rotateSession();
-  await flushPending();
+// User switched to a different tab. Rotate (serialized) and schedule a batched flush.
+chrome.tabs.onActivated.addListener(() => {
+  void serialize(() => rotateSession());
+  scheduleFlush();
 });
 
 // The active tab navigated to a new URL (title/url change).
-chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
-  if (changeInfo.url || changeInfo.status === "complete") {
-    if (tab.active) await rotateSession();
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+  if ((changeInfo.url || changeInfo.status === "complete") && tab.active) {
+    void serialize(() => rotateSession());
+    scheduleFlush();
   }
 });
 
 // The Chrome window gained/lost focus (e.g. user alt-tabbed away).
-chrome.windows.onFocusChanged.addListener(async (windowId) => {
+chrome.windows.onFocusChanged.addListener((windowId) => {
   // WINDOW_ID_NONE means no Chrome window is focused — close the session.
-  await rotateSession(windowId === chrome.windows.WINDOW_ID_NONE);
-  await flushPending();
+  void serialize(() => rotateSession(windowId === chrome.windows.WINDOW_ID_NONE));
+  scheduleFlush();
 });
 
 // The user went idle/locked or came back.
-chrome.idle.onStateChanged.addListener(async (state) => {
-  await rotateSession(state !== "active");
+chrome.idle.onStateChanged.addListener((state) => {
+  void serialize(() => rotateSession(state !== "active"));
+  scheduleFlush();
 });
 
 // Periodic flush of buffered events.
@@ -87,21 +142,20 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 async function rotateSession(pauseOnly = false): Promise<void> {
   const now = Date.now();
 
-  // 1. Close any open session and buffer it as an event.
+  // 1. Close any open session and buffer it. Record EVERY visited tab (min 1s) so that fast
+  //    switching is captured accurately instead of dropping sub-second visits.
   const current = await getSession();
   if (current) {
-    const durationSeconds = Math.round((now - current.startMs) / 1000);
-    if (durationSeconds >= 1) {
-      await bufferEvent({
-        source: "chrome",
-        domain: current.domain,
-        url: current.url,
-        title: current.title,
-        startedAt: new Date(current.startMs).toISOString(),
-        durationSeconds,
-        isActive: true,
-      });
-    }
+    const durationSeconds = Math.max(1, Math.round((now - current.startMs) / 1000));
+    await bufferEvent({
+      source: "chrome",
+      domain: current.domain,
+      url: current.url,
+      title: current.title,
+      startedAt: new Date(current.startMs).toISOString(),
+      durationSeconds,
+      isActive: true,
+    });
     await setSession(null);
   }
 
@@ -119,6 +173,16 @@ async function rotateSession(pauseOnly = false): Promise<void> {
     title: tab.title ?? "",
     startMs: now,
   });
+
+  // Instant heads-up the moment you switch TO a distraction site (deduped per arrival).
+  if (isDistraction(domain)) {
+    if (lastDistractDomain !== domain) {
+      lastDistractDomain = domain;
+      notifyDistraction(domain);
+    }
+  } else {
+    lastDistractDomain = null; // left the distraction site -> re-alert if you come back
+  }
 }
 
 // --- upload (stubbed) ------------------------------------------------------------------
@@ -129,6 +193,8 @@ async function rotateSession(pauseOnly = false): Promise<void> {
  * this POSTs the events to the website and clears the buffer on success.
  */
 async function flushPending(): Promise<void> {
+  if (flushing) return; // never let two uploads overlap
+
   const events = await getPending();
   if (events.length === 0) return;
 
@@ -139,6 +205,7 @@ async function flushPending(): Promise<void> {
     return;
   }
 
+  flushing = true;
   // Upload the buffered events to the website's /api/ingest, then clear on success.
   try {
     const res = await fetch(INGEST_URL, {
@@ -147,12 +214,15 @@ async function flushPending(): Promise<void> {
       body: JSON.stringify({ pairingToken: token, events }),
     });
     if (res.ok) {
-      await setPending([]); // clear only after a successful upload
+      // Drop only the events we just uploaded; keep anything buffered during the request.
+      const after = await getPending();
+      await setPending(after.slice(events.length));
       // The server returns the score for this batch — show the +/- on the toolbar icon.
       const data = (await res.json().catch(() => null)) as
         | { score?: { delta: number; classification?: string; score?: number } }
         | null;
-      if (data?.score) {
+      // Only surface a result that actually changed the plant (skip neutral / delta 0).
+      if (data?.score && data.score.delta !== 0) {
         await showDeltaBadge(data.score.delta, data.score.classification, data.score.score);
       }
       console.log(`[GrowFlow] uploaded ${events.length} event(s).`);
@@ -161,6 +231,8 @@ async function flushPending(): Promise<void> {
     }
   } catch (err) {
     console.warn("[GrowFlow] upload error:", err);
+  } finally {
+    flushing = false;
   }
 }
 
@@ -174,9 +246,13 @@ async function showDeltaBadge(
   classification?: string,
   score?: number
 ): Promise<void> {
-  const text = delta > 0 ? `+${delta}` : `${delta}`;
-  await chrome.action.setBadgeText({ text });
+  const sign = delta > 0 ? "+" : "";
+
+  // Toolbar badge reflects the actual server-computed points (the distraction popup is fired
+  // instantly on arrival in rotateSession, so we don't pop a second one here).
+  await chrome.action.setBadgeText({ text: `${sign}${delta}` });
   await chrome.action.setBadgeBackgroundColor({ color: delta > 0 ? "#5fa052" : "#c0492f" });
+
   await chrome.storage.local.set({
     [STORAGE_KEYS.lastResult]: { delta, classification, score, at: Date.now() },
   });

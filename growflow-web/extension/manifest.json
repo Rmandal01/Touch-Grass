@@ -3,7 +3,7 @@
   "name": "GrowFlow Activity Tracker",
   "version": "0.1.0",
   "description": "Tracks active-tab browsing time so GrowFlow can grow (or wilt) your plant.",
-  "permissions": ["tabs", "idle", "storage", "alarms"],
+  "permissions": ["tabs", "idle", "storage", "alarms", "notifications"],
   "host_permissions": [
     "https://website-rmandals-projects.vercel.app/*",
     "http://localhost:3000/*"
@@ -14,6 +14,8 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "GrowFlow"
-  }
+    "default_title": "GrowFlow",
+    "default_icon": "icon128.png"
+  },
+  "icons": { "128": "icon128.png" }
 }

@@ -1,109 +1,182 @@
-# GrowFlow — Web workstream (website + Chrome extension)
+# GrowFlow — web app + Chrome extension
 
-This folder is the self-contained web slice of GrowFlow. It is intentionally isolated
-from the rest of the repo (the Flutter app, Supabase migrations, and assets) so it can be
-developed and deployed independently without merge conflicts. Nothing outside this folder
-is modified by this workstream.
+GrowFlow is a productivity garden. You tell it what you're working on, and a Chrome
+extension watches your browsing: time on distraction sites (YouTube, social, video) wilts
+your plant and pops a "back to your task" alert, while time on productive sites (Docs,
+GitHub, email, Canvas) grows it. Your plant's points live in Supabase, so every surface
+(this website, and a separate Flutter app) sees the same plant.
 
-Two pieces live here, both written in TypeScript:
+This folder is self-contained — it does not touch the Flutter app or anything else in the
+repo.
 
-- website/ — a Next.js (App Router) + TypeScript + Tailwind app. This is the garden UI
-  that runs in the browser and deploys to Vercel.
-- extension/ — a Manifest V3 Chrome extension (TypeScript, compiled to JS by esbuild)
-  that tracks browser activity and will upload it to the backend.
-
-## What works today (no backend required)
-
-The website runs end-to-end against seeded mock scenarios. You can pick a scenario
-(locked-in / doomscroll / vacation), set a mood/goal, press "Evaluate now", and watch the
-plant grow (+3) or wilt (-1) using the real scoring-to-stage logic. This lets us demo and
-build the UI before the Supabase backend and Claude scoring loop exist.
-
-## Integration points are written, then commented out
-
-Every place that will eventually talk to the backend is scaffolded and clearly marked with
-a `// TODO(backend)` comment, then left dormant so nothing breaks and nothing conflicts:
-
-- website/lib/server/scoring.ts — scores activity with Claude server-side; falls back to the
-  local mock when ANTHROPIC_API_KEY is unset.
-- website/lib/server/plantSync.ts — writes the new growth to the shared Supabase `plants`
-  row (so the Flutter app updates); no-ops until Supabase env + a userId exist.
-- website/app/api/ingest/route.ts — the endpoint the extension reports activity to;
-  token-resolution + storage are TODO(backend).
-- extension/src/background.ts — the activity upload call to /api/ingest (commented; the
-  extension still tracks activity locally and logs it).
-
-When the backend lands, a teammate fills in the env vars and uncomments these blocks.
-
-## Where the AI scoring runs
-
-The Claude scoring runs server-side in the website's own Next.js API route,
-website/app/api/analyze/route.ts (Node runtime, on Vercel) — not in a Supabase Edge Function
-and not in the browser/extension. Flow: the browser (or the extension via /api/ingest) posts
-the activity window to the website; the route calls Claude (key stays in Vercel env), then
-writes the resulting growth to the shared Supabase `plants` row that the Flutter app also
-reads. With no Anthropic key set, the route returns a realistic mock score so the demo works.
-
-## Run the website
+## How it works
 
 ```
+You (browser)
+  └─ start a task on the website  ──────────────►  server stores the active task
+  └─ Chrome extension tracks each tab's active time
+        └─ on a distraction site: instant "−1" popup (client-side)
+        └─ batches tab time, uploads to  POST /api/ingest
+              └─ server scores the window by site category:
+                   distraction-dominant → −1   productive-dominant → +3   neutral → 0
+              └─ writes the new points to the Supabase `plants` row
+  └─ website polls /api/plant and animates the plant (and the Flutter app reads the same row)
+```
+
+Points only move while a task is active. The up/down decision is deterministic by site
+category (predictable); Claude (optional) only writes the advice text.
+
+## Prerequisites
+
+- Node.js 18+ (developed on 24) and npm
+- A free Supabase project — https://supabase.com
+- Google Chrome (to load the extension)
+- Optional: an Anthropic API key (https://console.anthropic.com) for nicer advice text —
+  without it the app still works, scoring is the same.
+
+## Setup
+
+### 1. Install dependencies
+
+```bash
+cd growflow-web/website  && npm install
+cd ../extension          && npm install
+```
+
+### 2. Create the database
+
+1. Create a Supabase project.
+2. In the Supabase dashboard → SQL Editor → paste the contents of
+   [`supabase/schema.sql`](supabase/schema.sql) → Run. This creates the `plants`,
+   `device_links`, and `activity_events` tables and seeds a demo user whose pairing code is
+   `demo`.
+3. Project Settings → API → copy three values: the Project URL, the `anon` public key, and
+   the `service_role` secret key.
+
+### 3. Configure environment variables
+
+Create `growflow-web/website/.env.local` (it is gitignored — never commit it):
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://<your-project>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
+SUPABASE_SERVICE_ROLE_KEY=<service_role key>
+ANTHROPIC_API_KEY=<optional - sk-ant-...>
+```
+
+`NEXT_PUBLIC_*` are safe for the browser; `SUPABASE_SERVICE_ROLE_KEY` and `ANTHROPIC_API_KEY`
+are server-only and must never be prefixed `NEXT_PUBLIC`.
+
+### 4. Run the website
+
+```bash
 cd growflow-web/website
-npm install
-npm run dev          # http://localhost:3000
+npm run dev        # http://localhost:3000
 ```
 
-## Connect Supabase (the live garden)
+### 5. Build and load the extension
 
-The "Your live garden" card is driven by the extension and persisted in Supabase. To enable
-it:
+```bash
+cd growflow-web/extension
+npm run build      # compiles src/*.ts -> dist/*.js (Chrome loads dist/)
+```
 
-1. In your Supabase project, open SQL Editor and run growflow-web/supabase/schema.sql once.
-   It creates plants / device_links / activity_events and seeds a demo user with pairing
-   token `demo`.
-2. Put these in growflow-web/website/.env.local (server-only ones are never NEXT_PUBLIC):
-   - NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY (Project Settings -> API)
-   - SUPABASE_SERVICE_ROLE_KEY (same page; keep secret)
-3. Restart `npm run dev`.
+Then in Chrome: `chrome://extensions` → enable **Developer mode** → **Load unpacked** →
+select the `growflow-web/extension` folder (the one with `manifest.json`). Pin the
+extension so you can see its badge.
 
-Flow once connected: extension (paired with code `demo`) uploads on each tab switch ->
-/api/ingest resolves the token, stores the activity, scores it with Claude, and writes the
-new growth to the `plants` row -> the website polls /api/plant and animates the plant. No
-button press — points go down for YouTube, up for docs, automatically.
+> The extension is preset to talk to `http://localhost:3000`. To point it at a deployed
+> site, edit `INGEST_URL` in [`extension/src/config.ts`](extension/src/config.ts), add that
+> host to `host_permissions` in [`extension/manifest.json`](extension/manifest.json), then
+> `npm run build` and reload the extension.
+
+## Using it
+
+1. Open http://localhost:3000, type what you're working on (e.g. "finish the lab report"),
+   and click **Start focusing**.
+2. Click the extension icon, enter the pairing code `demo`, and **Save & connect**
+   (the popup should then show **Paired: yes**).
+3. Browse normally. Switch to a distraction site (YouTube, TikTok, …) → an instant popup
+   appears. Spend active time on productive sites → the plant grows. Neutral sites do
+   nothing. The website updates the plant live.
+4. Click **Finish task** to see how many points the session earned.
+
+Note: the extension records a site's time when you switch **away** from it, so to see points
+move you have to leave the tab. Whichever site you spent the most active time on in a window
+decides that window's points.
 
 ## Deploy to Vercel
 
-1. Push this repo to GitHub (already wired) and import it in Vercel.
-2. Set Root Directory to growflow-web/website (the Next.js app lives in a subfolder).
-3. Add the env vars in the Vercel dashboard: ANTHROPIC_API_KEY, NEXT_PUBLIC_SUPABASE_URL,
-   NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY. (Only NEXT_PUBLIC_* reach the
-   browser; the others stay server-side.)
-4. Deploy. After it's live, point the extension at the deployed URL: set INGEST_URL in
-   extension/src/config.ts to https://YOUR-APP.vercel.app/api/ingest, add that host to
-   manifest.json "host_permissions", `npm run build`, and reload the extension.
+1. Import the GitHub repo into Vercel (or use `vercel` CLI from `growflow-web/website`).
+2. **Settings → Build and Deployment → Root Directory → `growflow-web/website`** — this is
+   required because the Next.js app lives in a subfolder. Without it the build fails with
+   "Couldn't find any pages or app directory".
+3. **Settings → Environment Variables** → add the four variables above (Production).
+4. **Settings → Deployment Protection → Vercel Authentication → Disabled** — otherwise the
+   site is behind a login wall (HTTP 401) and the extension can't reach it.
+5. Deploy. Then point the extension at `https://<your-app>.vercel.app/api/ingest` (see the
+   note in step 5 of Setup) so it drives the hosted plant instead of localhost.
 
-Note: the manual "Use my real browser activity" button uses an in-memory buffer that isn't
-reliable on Vercel's serverless functions — the live garden (Supabase) is the path that
-works in production.
+## Scoring rules
 
-## Build / load the extension
+- Distraction sites (YouTube, TikTok, Instagram, Reddit, Netflix, social/video) make up most
+  of a window → **−1**.
+- Productive sites (Google Docs/Sheets/Slides, Gmail, GitHub, Canvas, etc.) dominate → **+3**.
+- Anything else (neutral) → **0**, no change.
+- Scoring only happens while a task is active.
+- The distraction site list (for the instant popup) is in `extension/src/background.ts`; the
+  category list (for scoring) is in `website/lib/categorize.ts` — edit either to taste.
+
+## Troubleshooting
+
+- **No popup on a distraction site:** (1) reload the extension after every `npm run build`;
+  (2) a Chrome popup is a Windows notification — turn OFF Do Not Disturb / Focus Assist, and
+  make sure notifications are allowed for Chrome in Windows Settings → System → Notifications.
+- **Plant doesn't move:** the task must be active on the **same** server the extension posts
+  to. If the extension's `INGEST_URL` is localhost, start the task on localhost (not the
+  Vercel URL), and vice-versa. Also remember to switch away from a site to upload its time.
+- **"No plant found":** you didn't run `supabase/schema.sql`.
+- **Extension popup says "Upload: off":** enter the pairing code `demo`, and make sure
+  `INGEST_URL` is set (rebuild + reload after changing it).
+- **Vercel build fails / 401:** see the Deploy section — Root Directory and Deployment
+  Protection are the two settings people miss.
+
+## Project layout
 
 ```
-cd growflow-web/extension
-npm install
-npm run build        # compiles src/*.ts -> dist/*.js
-# or: npm run watch  # rebuild on change
+growflow-web/
+  website/                      Next.js + TypeScript app (deploys to Vercel)
+    app/page.tsx                the hub (renders LiveGarden)
+    components/LiveGarden.tsx   task launcher + live plant (polls /api/plant)
+    app/api/
+      task/route.ts             start / finish a task
+      ingest/route.ts           extension uploads activity here; scores + writes the plant
+      plant/route.ts            current plant + active task (the website polls this)
+      mood/, analyze/, live/    supporting routes
+    lib/
+      categorize.ts             domain -> productive | unproductive | neutral
+      plant.ts                  growth/stage/transition math
+      server/
+        scoring.ts              deterministic category scoring (+ optional Claude advice)
+        supabaseAdmin.ts        service-role Supabase client + token resolution
+        taskState.ts            in-memory active-task store
+        plantSync.ts, liveState.ts
+    .env.example                copy to .env.local
+  extension/                    Manifest V3 Chrome extension (TypeScript -> esbuild -> dist/)
+    manifest.json
+    src/background.ts           tracks tabs, instant distraction popup, batched upload
+    src/popup.ts, popup.html    pairing code + status
+    src/config.ts               INGEST_URL + storage keys
+    icon128.png
+  supabase/schema.sql           database schema + demo seed
 ```
 
-Then in Chrome: chrome://extensions -> enable Developer mode -> "Load unpacked" ->
-select the growflow-web/extension folder. Open the popup, paste the pairing code (the
-backend will issue real codes later), and the service worker begins tracking the active
-tab. Activity is logged to the service-worker console until the upload TODO is enabled.
+## Resetting the demo plant
 
-## Environment variables
+The demo plant persists in Supabase. To reset it, run this in the Supabase SQL Editor:
 
-See website/.env.example and extension/src/config.ts.
-
-- Public, client-safe (browser): NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY.
-- Server-only (the API routes / Vercel env, never NEXT_PUBLIC): ANTHROPIC_API_KEY,
-  ANTHROPIC_MODEL, SUPABASE_SERVICE_ROLE_KEY.
-- Extension: INGEST_URL in extension/src/config.ts points at the website's /api/ingest.
+```sql
+update plants set growth_points = 50, stage = 'young', is_dead = false,
+  last_score = null, last_classification = null, last_advice = null
+where user_id = 'demo-user';
+```
