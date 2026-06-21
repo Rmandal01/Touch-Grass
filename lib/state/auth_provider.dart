@@ -53,14 +53,16 @@ class ProfileController extends AsyncNotifier<Profile?> {
     );
   }
 
-  /// Saves the first mood/goal during onboarding (does not change the profile,
-  /// but kept here so the wizard talks to a single controller).
+  /// Saves the first mood/goal during onboarding onto the user's plant row
+  /// (does not change the profile, but kept here so the wizard talks to a single
+  /// controller). Uses the plant look chosen earlier in onboarding.
   Future<void> setFirstMood({required String mood, String? goal}) async {
     final user = ref.read(authServiceProvider).currentUser;
     if (user == null) return;
+    final plantType = state.valueOrNull?.plantType ?? 'succulent';
     await ref
         .read(authServiceProvider)
-        .setActiveMood(user.id, mood: mood, goal: goal);
+        .setPlantMood(user.id, mood: mood, goal: goal, plantType: plantType);
   }
 }
 

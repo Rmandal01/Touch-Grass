@@ -3,7 +3,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/constants.dart';
 import '../core/supabase_client.dart';
-import '../models/mood_session.dart';
 import '../models/profile.dart';
 
 /// Wraps Supabase Auth (Google OAuth) and profile persistence for GrowFlow.
@@ -99,27 +98,44 @@ class AuthService {
     return Profile.fromMap(updated);
   }
 
-  /// Sets a new active mood/goal session, deactivating any previous active one.
+  /// Records the user's current mood/goal directly on their plant row.
+  ///
+  /// The mood/goal live on the `plants` table (`current_mood` / `current_goal`)
+  /// so the scoring loop and garden read them straight off the plant. Updates the
+  /// existing plant if present; otherwise seeds the onboarding plant (growth
+  /// starts at 20, which is the `sprout` stage).
   ///
   /// Used by the first-mood onboarding step and later by the productivity panel.
-  Future<MoodSession> setActiveMood(
+  Future<void> setPlantMood(
     String userId, {
     required String mood,
     String? goal,
+    required String plantType,
   }) async {
-    // Close out any currently-active session so only one is active at a time.
-    await _client
-        .from('mood_sessions')
-        .update({'is_active': false, 'ended_at': DateTime.now().toIso8601String()})
-        .eq('user_id', userId)
-        .eq('is_active', true);
+    final now = DateTime.now().toIso8601String();
 
-    final session = MoodSession(userId: userId, mood: mood, goal: goal);
-    final inserted = await _client
-        .from('mood_sessions')
-        .insert(session.toInsert())
-        .select()
-        .single();
-    return MoodSession.fromMap(inserted);
+    final updated = await _client
+        .from('plants')
+        .update({
+          'current_mood': mood,
+          'current_goal': goal ?? '',
+          'updated_at': now,
+        })
+        .eq('user_id', userId)
+        .select();
+
+    if ((updated as List).isNotEmpty) return;
+
+    // No plant yet — seed the initial onboarding plant.
+    await _client.from('plants').insert({
+      'user_id': userId,
+      'plant_type': plantType,
+      'growth_points': 20,
+      'stage': 'sprout',
+      'is_dead': false,
+      'current_mood': mood,
+      'current_goal': goal ?? '',
+      'updated_at': now,
+    });
   }
 }
