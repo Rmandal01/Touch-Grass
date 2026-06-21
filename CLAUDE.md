@@ -16,9 +16,13 @@ end-to-end on one laptop. Group gardens and AI app-locking are designed at the s
 flow level but are deferred (built only if time remains). See the implementation plan in
 the repo for the full design.
 
+Onboarding + Google OAuth are built and working; the garden/productivity surface is next.
+If you are implementing the garden (main screen), read HANDOFF.md first — it documents the
+`/garden` integration point and the guarantees the auth/onboarding flow provides.
+
 Locked-in decisions:
 - Single user first; group garden and AI app-locking deferred.
-- Primary platform is Flutter Web/Desktop (one-laptop demo, no phone pairing).
+- Primary platform is Flutter for mobile (iOS or Android devices).
 - Productivity data comes from a real Chrome extension plus manual mood/goal input, with
   seeded fallback scenarios for stage reliability. There is no mobile screentime on
   web/desktop.
@@ -55,7 +59,7 @@ End-to-end flow (single user):
 
 ## Tech stack
 
-- Flutter (stable) and Dart, web and desktop targets.
+- Flutter (stable) and Dart, Android (mobile) and web targets.
 - State management: Riverpod (riverpod / flutter_riverpod).
 - Routing: go_router.
 - Backend SDK: supabase_flutter (auth, Postgres, Edge Function invoke, Realtime).
@@ -74,13 +78,16 @@ End-to-end flow (single user):
 
 - lib/
   - main.dart, app.dart (router and theme)
-  - core/ (Supabase client init, config, theme, constants)
+  - core/ (Supabase client init, config, theme, constants; app_router.dart wires go_router,
+    onboarding_redirect.dart holds the pure auth/onboarding redirect rules)
   - models/ (Profile, MoodSession, Plant, Score, ActivityEvent)
   - services/ (auth_service, plant_service, analysis_service, tts_service, pairing_service)
-  - state/ (Riverpod providers: authProvider, plantProvider, moodProvider, scoreProvider)
+  - state/ (Riverpod providers: authProvider, plantProvider, moodProvider, scoreProvider;
+    auth_provider.dart exposes authService/pairingService and the ProfileController)
   - features/
-    - onboarding/ (welcome, concept explainer, plant picker, first mood, pairing screen)
-    - auth/ (Google OAuth handling)
+    - onboarding/ (welcome, concept explainer, plant picker, first mood, pairing screen;
+      widgets/ holds the shared OnboardingScaffold)
+    - auth/ (Google OAuth handling — sign_in_screen)
     - garden/ (PlantRenderer abstraction and grow/wilt/death playback, garden screen)
     - productivity/ (mood/goal input, score card, "Evaluate now" trigger, advice panel)
     - group/ (deferred placeholder)
@@ -156,7 +163,17 @@ row, then updates growth:
 
 ## How to run
 
-- App: flutter run -d chrome (or a desktop device).
+- App: flutter run -d <android-device-or-emulator> (web, `-d chrome`, still works as a
+  dev fallback). Configured platforms are android and web; the Windows desktop target was
+  removed. Building/running Android needs the Android SDK + accepted licenses
+  (`flutter doctor`).
+- Client env is passed via dart-defines: --dart-define-from-file=dart_defines.json (a
+  client-only file holding SUPABASE_URL and SUPABASE_ANON_KEY; never point this at .env,
+  which contains server secrets).
+- Google OAuth redirect targets differ by platform: web returns to the page origin; Android
+  returns to the deep link `io.supabase.growflow://login-callback/` (see kMobileAuthRedirect
+  and the AndroidManifest intent-filter). Add both to the Supabase dashboard's allowed
+  redirect URLs.
 - Backend: supabase start, then supabase functions serve for local Edge Functions.
 - Extension: load chrome-extension/ unpacked via chrome://extensions (Developer mode), then
   paste the pairing code shown in the app.
