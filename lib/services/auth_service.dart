@@ -114,17 +114,24 @@ class AuthService {
   }) async {
     final now = DateTime.now().toIso8601String();
 
-    final updated = await _client
+    // Decide update-vs-insert by checking existence directly: an UPDATE's
+    // RETURNING can come back empty even when the row exists, which would
+    // otherwise send us into an INSERT that collides on the user_id primary key.
+    final existing = await _client
         .from('plants')
-        .update({
-          'current_mood': mood,
-          'current_goal': goal ?? '',
-          'updated_at': now,
-        })
+        .select('user_id')
         .eq('user_id', userId)
-        .select();
+        .maybeSingle();
 
-    if ((updated as List).isNotEmpty) return;
+    if (existing != null) {
+      // Existing plant — only touch mood/goal, leaving growth/stage intact.
+      await _client.from('plants').update({
+        'current_mood': mood,
+        'current_goal': goal ?? '',
+        'updated_at': now,
+      }).eq('user_id', userId);
+      return;
+    }
 
     // No plant yet — seed the initial onboarding plant.
     await _client.from('plants').insert({
