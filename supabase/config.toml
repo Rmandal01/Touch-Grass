@@ -1,0 +1,18 @@
+# GrowFlow Supabase local config. Minimal slice for the onboarding/OAuth flow.
+# Secrets are read from the environment, never committed.
+
+project_id = "growflow"
+
+[auth]
+enabled = true
+# Allowed redirect targets for OAuth round-trips (add your deployed origin too).
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000", "http://localhost:8080"]
+
+# Google OAuth for "Sign in with Google". Provide credentials via env:
+#   SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID
+#   SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET
+[auth.external.google]
+enabled = true
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
