@@ -3,12 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/auth/sign_in_screen.dart';
-import '../features/garden/garden_screen.dart';
 import '../features/onboarding/concept_screen.dart';
 import '../features/onboarding/first_mood_screen.dart';
 import '../features/onboarding/pairing_screen.dart';
 import '../features/onboarding/plant_picker_screen.dart';
 import '../features/onboarding/welcome_screen.dart';
+import '../screen_time_page.dart';
 import '../state/auth_provider.dart';
 import 'onboarding_redirect.dart';
 
@@ -67,7 +67,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: Routes.garden,
-        builder: (_, __) => const GardenScreen(),
+        builder: (_, __) => const ScreenTimePage(),
       ),
     ],
   );
