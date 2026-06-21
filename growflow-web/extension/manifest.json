@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "GrowFlow Activity Tracker",
+  "version": "0.1.0",
+  "description": "Tracks active-tab browsing time so GrowFlow can grow (or wilt) your plant.",
+  "permissions": ["tabs", "idle", "storage", "alarms"],
+  "host_permissions": ["http://localhost:3000/*"],
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "GrowFlow"
+  }
+}

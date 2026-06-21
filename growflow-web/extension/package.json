@@ -1,0 +1,17 @@
+{
+  "name": "growflow-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GrowFlow Chrome extension (MV3) — tracks browser activity. TypeScript compiled to JS by esbuild.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.3",
+    "@types/chrome": "^0.0.297"
+  }
+}

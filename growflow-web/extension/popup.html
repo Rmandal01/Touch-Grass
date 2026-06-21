@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GrowFlow</title>
+    <style>
+      /* Inline styles keep the popup self-contained (no CSS build needed for the extension). */
+      :root { color-scheme: light; }
+      body {
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        width: 280px;
+        margin: 0;
+        padding: 16px;
+        color: #20401b;
+        background: #f3f8f0;
+      }
+      h1 { font-size: 16px; margin: 0 0 2px; }
+      p.sub { margin: 0 0 12px; font-size: 12px; color: #3a6b32; }
+      label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+      input {
+        width: 100%; box-sizing: border-box; padding: 8px; font-size: 14px;
+        border: 1px solid #a9cf9a; border-radius: 8px; outline: none;
+      }
+      input:focus { border-color: #5fa052; }
+      button {
+        margin-top: 8px; width: 100%; padding: 8px; font-size: 14px; font-weight: 600;
+        color: #fff; background: #5fa052; border: none; border-radius: 8px; cursor: pointer;
+      }
+      button:hover { background: #3a6b32; }
+      .status { margin-top: 12px; font-size: 12px; color: #3a6b32; }
+      .status b { color: #20401b; }
+    </style>
+  </head>
+  <body>
+    <h1>GrowFlow 🌱</h1>
+    <p class="sub">Connect this browser to your garden.</p>
+
+    <label for="code">Pairing code</label>
+    <input id="code" type="text" placeholder="Paste code from the app" autocomplete="off" />
+    <button id="save">Save &amp; connect</button>
+
+    <div class="status" id="status">Not connected.</div>
+
+    <!-- Compiled by esbuild from src/popup.ts. -->
+    <script type="module" src="dist/popup.js"></script>
+  </body>
+</html>

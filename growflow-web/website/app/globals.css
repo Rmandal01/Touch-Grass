@@ -1,0 +1,55 @@
+/* globals.css — Tailwind v4 entry + GrowFlow theme.
+   Tailwind v4 is configured entirely from CSS: this single import pulls in the framework,
+   and the @theme block defines our palette/fonts as design tokens usable as utilities. */
+
+@import "tailwindcss";
+
+@theme {
+  /* A calm, garden-y palette: mossy greens with a warm soil accent. */
+  --color-moss-50: #f3f8f0;
+  --color-moss-100: #e2efdb;
+  --color-moss-300: #a9cf9a;
+  --color-moss-500: #5fa052;
+  --color-moss-700: #3a6b32;
+  --color-moss-900: #20401b;
+  --color-soil-500: #8a5a3b;
+  --color-bloom-500: #e8a33d;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  /* Soft top-down gradient like sky-into-meadow. */
+  background: radial-gradient(120% 80% at 50% -10%, var(--color-moss-50), #ffffff 60%);
+  color: var(--color-moss-900);
+}
+
+/* --- Plant transition animations (grow / wilt / death) ---
+   Keyed off a data-attribute set by PlantView so the right motion plays each evaluation. */
+
+@keyframes gf-grow {
+  0% { transform: scale(0.85); }
+  50% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+@keyframes gf-wilt {
+  0% { transform: rotate(0deg); }
+  25% { transform: rotate(-6deg); }
+  75% { transform: rotate(6deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes gf-death {
+  0% { transform: scale(1); filter: grayscale(0); opacity: 1; }
+  100% { transform: scale(0.9); filter: grayscale(1); opacity: 0.6; }
+}
+
+.gf-anim[data-transition="grow"] { animation: gf-grow 600ms ease-out; }
+.gf-anim[data-transition="wilt"] { animation: gf-wilt 600ms ease-in-out; }
+.gf-anim[data-transition="death"] { animation: gf-death 900ms ease-in forwards; }

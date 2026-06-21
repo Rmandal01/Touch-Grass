@@ -1,0 +1,22 @@
+# Local .gitignore for the GrowFlow web workstream (website + extension).
+# Kept inside growflow-web/ on purpose so we never touch the repo-root .gitignore
+# and never create merge conflicts with the Flutter / Supabase / assets work.
+
+# Dependencies
+**/node_modules/
+
+# Next.js build output
+website/.next/
+website/out/
+website/next-env.d.ts
+
+# Extension build output (esbuild compiles src/*.ts -> dist/*.js)
+extension/dist/
+
+# Local environment files (never commit real keys)
+**/.env
+**/.env.local
+
+# Misc
+.DS_Store
+*.log

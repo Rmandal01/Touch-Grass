@@ -9,6 +9,20 @@ growth (+3) or decay (-1).
 
 The repo folder is named Touch-Grass; the product name is GrowFlow.
 
+## Two frontends, one backend (important)
+
+Work is split across a Flutter phone app and a web workstream:
+
+- Phone app: Flutter (the rest of this file describes its plan).
+- Web: a Next.js + TypeScript app plus the Chrome extension, both isolated in the top-level
+  growflow-web/ folder (deploys to Vercel). The web frontend is Next.js, not Flutter web.
+
+Both frontends talk to the same Supabase backend (same plants / scores / mood_sessions
+rows), so they coexist without overlap. For the web workstream, the Claude scoring runs in
+the website's own Next.js API route (growflow-web/website/app/api/analyze/route.ts), which
+writes the new growth to the shared Supabase `plants` row that the Flutter app also reads —
+not in a Supabase Edge Function. See growflow-web/README.md for that workstream's details.
+
 ## Demo scope
 
 This codebase targets a hackathon demo: a polished single-user vertical slice that runs
