@@ -1,4 +1,4 @@
-# Touch-Grass / GrowFlow
+# GrowFlow
 
 ## Screen-time productivity score (Android)
 
