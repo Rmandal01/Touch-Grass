@@ -52,9 +52,38 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-Deploy: push to Vercel with the project root set to growflow-web/website. Set the env vars
-from .env.example in the Vercel dashboard (all NEXT_PUBLIC_* are safe for the client; never
-put service-role or Anthropic/DeepGram keys here).
+## Connect Supabase (the live garden)
+
+The "Your live garden" card is driven by the extension and persisted in Supabase. To enable
+it:
+
+1. In your Supabase project, open SQL Editor and run growflow-web/supabase/schema.sql once.
+   It creates plants / device_links / activity_events and seeds a demo user with pairing
+   token `demo`.
+2. Put these in growflow-web/website/.env.local (server-only ones are never NEXT_PUBLIC):
+   - NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY (Project Settings -> API)
+   - SUPABASE_SERVICE_ROLE_KEY (same page; keep secret)
+3. Restart `npm run dev`.
+
+Flow once connected: extension (paired with code `demo`) uploads on each tab switch ->
+/api/ingest resolves the token, stores the activity, scores it with Claude, and writes the
+new growth to the `plants` row -> the website polls /api/plant and animates the plant. No
+button press — points go down for YouTube, up for docs, automatically.
+
+## Deploy to Vercel
+
+1. Push this repo to GitHub (already wired) and import it in Vercel.
+2. Set Root Directory to growflow-web/website (the Next.js app lives in a subfolder).
+3. Add the env vars in the Vercel dashboard: ANTHROPIC_API_KEY, NEXT_PUBLIC_SUPABASE_URL,
+   NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY. (Only NEXT_PUBLIC_* reach the
+   browser; the others stay server-side.)
+4. Deploy. After it's live, point the extension at the deployed URL: set INGEST_URL in
+   extension/src/config.ts to https://YOUR-APP.vercel.app/api/ingest, add that host to
+   manifest.json "host_permissions", `npm run build`, and reload the extension.
+
+Note: the manual "Use my real browser activity" button uses an in-memory buffer that isn't
+reliable on Vercel's serverless functions — the live garden (Supabase) is the path that
+works in production.
 
 ## Build / load the extension
 

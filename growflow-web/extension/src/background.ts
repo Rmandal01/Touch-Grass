@@ -48,9 +48,10 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // --- events that start/stop a session --------------------------------------------------
 
-// User switched to a different tab.
+// User switched to a different tab. Flush right away so the plant reacts promptly.
 chrome.tabs.onActivated.addListener(async () => {
   await rotateSession();
+  await flushPending();
 });
 
 // The active tab navigated to a new URL (title/url change).
@@ -64,6 +65,7 @@ chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
   // WINDOW_ID_NONE means no Chrome window is focused — close the session.
   await rotateSession(windowId === chrome.windows.WINDOW_ID_NONE);
+  await flushPending();
 });
 
 // The user went idle/locked or came back.

@@ -24,6 +24,7 @@ import ScenarioPicker from "@/components/ScenarioPicker";
 import MoodInput from "@/components/MoodInput";
 import ScoreCard from "@/components/ScoreCard";
 import AdvicePanel from "@/components/AdvicePanel";
+import LiveGarden from "@/components/LiveGarden";
 import { applyDelta, plantSeed } from "@/lib/plant";
 import { evaluate } from "@/lib/analysis";
 import { SCENARIOS, type ScenarioId } from "@/lib/mockData";
@@ -111,6 +112,10 @@ export default function Home() {
         </p>
       </header>
 
+      {/* Live, Supabase-backed garden driven by the Chrome extension. */}
+      <LiveGarden />
+
+      {/* Below: the manual scenario demo (local, doesn't touch Supabase). */}
       <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
         {/* Left: the plant */}
         <section className="flex flex-col items-center justify-center rounded-2xl border border-moss-300/50 bg-white p-8">

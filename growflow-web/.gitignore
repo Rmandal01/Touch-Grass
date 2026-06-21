@@ -10,6 +10,9 @@ website/.next/
 website/out/
 website/next-env.d.ts
 
+# TypeScript incremental build cache
+**/*.tsbuildinfo
+
 # Extension build output (esbuild compiles src/*.ts -> dist/*.js)
 extension/dist/
 

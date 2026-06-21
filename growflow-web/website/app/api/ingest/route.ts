@@ -1,24 +1,32 @@
 /**
  * app/api/ingest/route.ts
  * -----------------------
- * The endpoint the Chrome extension reports browser activity to. The extension batches
- * ActivityEvents and POSTs them here with its pairing token; this route tags each event with
- * a productivity category and stores it in the in-memory live buffer (lib/server/liveState).
- * The website then pulls that buffer from /api/live and scores it through the normal Claude
- * pipeline — which is how real browsing (e.g. time in Google Docs) ends up moving the plant.
+ * The endpoint the Chrome extension reports browser activity to (on every tab switch + on a
+ * timer). When Supabase is configured this does the full loop automatically:
  *
- * Single-user local demo: there's one global buffer and the token is only checked for
- * presence (not resolved to a user). TODO(backend): with Supabase, resolve pairingToken ->
- * userId via device_links and insert into activity_events per user instead.
+ *   pairingToken -> userId  (device_links)
+ *   tag + insert events     (activity_events)
+ *   score the batch         (Claude via scoreActivity, using the plant's current mood)
+ *   apply +3 / -1           (applyDelta)
+ *   write the new points    (plants row)
+ *
+ * So switching to YouTube deducts points and switching to a doc adds them, persisted in
+ * Supabase — no button press. The website's LiveGarden polls /api/plant to show it.
+ *
+ * When Supabase is NOT configured, it falls back to the in-memory buffer (lib/server/
+ * liveState) so the manual "Use my real browser activity" button still works.
  *
  * POST body: { pairingToken: string, events: ActivityEvent[] }
  *
- * Depends on: lib/types.ts, lib/categorize.ts, lib/server/liveState.ts.
+ * Depends on: lib/categorize, lib/server/{supabaseAdmin,scoring}, lib/plant, lib/server/liveState.
  */
 
 import { NextResponse } from "next/server";
-import type { ActivityEvent } from "@/lib/types";
+import type { ActivityEvent, Plant, PlantType } from "@/lib/types";
 import { tagEvents } from "@/lib/categorize";
+import { getSupabaseAdmin, resolvePairingToken } from "@/lib/server/supabaseAdmin";
+import { scoreActivity } from "@/lib/server/scoring";
+import { applyDelta } from "@/lib/plant";
 import { addEvents } from "@/lib/server/liveState";
 
 export const runtime = "nodejs";
@@ -36,14 +44,91 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { pairingToken, events = [] } = body;
+  const { pairingToken } = body;
   if (!pairingToken) {
     return NextResponse.json({ error: "Missing pairingToken" }, { status: 401 });
   }
 
-  // Tag each event with productive/unproductive/neutral, then store in the live buffer.
-  const total = addEvents(tagEvents(events));
+  const events = tagEvents(body.events ?? []);
+  const admin = getSupabaseAdmin();
 
-  console.log(`[ingest] received ${events.length} event(s); buffer now ${total}`);
-  return NextResponse.json({ ok: true, received: events.length, buffered: total });
+  // --- Fallback path: no Supabase -> just buffer for the manual button. ---
+  if (!admin) {
+    const total = addEvents(events);
+    return NextResponse.json({ ok: true, received: events.length, buffered: total, mode: "memory" });
+  }
+
+  // --- Full path: resolve user, store, auto-score, update the plant in Supabase. ---
+  const userId = await resolvePairingToken(admin, pairingToken);
+  if (!userId) {
+    return NextResponse.json({ error: "Unknown pairing token" }, { status: 401 });
+  }
+
+  // Store the raw activity (best-effort).
+  if (events.length > 0) {
+    await admin.from("activity_events").insert(
+      events.map((e) => ({
+        user_id: userId,
+        source: e.source,
+        domain: e.domain,
+        url: e.url ?? null,
+        title: e.title ?? null,
+        category: e.category ?? null,
+        started_at: e.startedAt ?? null,
+        duration_seconds: e.durationSeconds,
+        is_active: e.isActive,
+      }))
+    );
+  }
+
+  // Load the current plant (points + mood).
+  const { data: row, error } = await admin
+    .from("plants")
+    .select("plant_type, growth_points, stage, is_dead, current_mood, current_goal")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error || !row) {
+    return NextResponse.json({ error: "No plant for user" }, { status: 404 });
+  }
+
+  // Nothing meaningful to score -> don't move the plant, just acknowledge.
+  if (events.length === 0) {
+    return NextResponse.json({ ok: true, received: 0, mode: "supabase" });
+  }
+
+  // Score this batch with Claude (or the mock), using the user's current mood/goal.
+  const result = await scoreActivity(events, { mood: row.current_mood, goal: row.current_goal });
+
+  const current: Plant = {
+    plantType: row.plant_type as PlantType,
+    growthPoints: row.growth_points as number,
+    stage: row.stage as Plant["stage"],
+    isDead: row.is_dead as boolean,
+  };
+  const { plant: next, transition } = applyDelta(current, result.delta);
+
+  await admin
+    .from("plants")
+    .update({
+      growth_points: next.growthPoints,
+      stage: next.stage,
+      is_dead: next.isDead,
+      last_score: result.score,
+      last_classification: result.classification,
+      last_advice: result.advice,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId);
+
+  console.log(
+    `[ingest] user=${userId} scored=${result.score} delta=${result.delta} -> growth=${next.growthPoints}`
+  );
+
+  return NextResponse.json({
+    ok: true,
+    received: events.length,
+    mode: "supabase",
+    score: result,
+    plant: { ...next, transition },
+  });
 }
