@@ -148,6 +148,13 @@ async function flushPending(): Promise<void> {
     });
     if (res.ok) {
       await setPending([]); // clear only after a successful upload
+      // The server returns the score for this batch — show the +/- on the toolbar icon.
+      const data = (await res.json().catch(() => null)) as
+        | { score?: { delta: number; classification?: string; score?: number } }
+        | null;
+      if (data?.score) {
+        await showDeltaBadge(data.score.delta, data.score.classification, data.score.score);
+      }
       console.log(`[GrowFlow] uploaded ${events.length} event(s).`);
     } else {
       console.warn("[GrowFlow] upload failed:", res.status);
@@ -155,6 +162,24 @@ async function flushPending(): Promise<void> {
   } catch (err) {
     console.warn("[GrowFlow] upload error:", err);
   }
+}
+
+/**
+ * Show the latest point change on the toolbar icon so you see it the moment you switch tabs:
+ * a green "+3" when the last activity was productive, a red "-1" when it wasn't. Also stores
+ * the result so the popup can show what happened.
+ */
+async function showDeltaBadge(
+  delta: number,
+  classification?: string,
+  score?: number
+): Promise<void> {
+  const text = delta > 0 ? `+${delta}` : `${delta}`;
+  await chrome.action.setBadgeText({ text });
+  await chrome.action.setBadgeBackgroundColor({ color: delta > 0 ? "#5fa052" : "#c0492f" });
+  await chrome.storage.local.set({
+    [STORAGE_KEYS.lastResult]: { delta, classification, score, at: Date.now() },
+  });
 }
 
 // --- storage helpers -------------------------------------------------------------------

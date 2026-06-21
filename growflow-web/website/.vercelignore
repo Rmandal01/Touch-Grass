@@ -1,0 +1,2 @@
+# Never upload local env files to the Vercel build — env vars are set in the dashboard.
+.env*.local

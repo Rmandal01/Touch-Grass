@@ -13,6 +13,9 @@ website/next-env.d.ts
 # TypeScript incremental build cache
 **/*.tsbuildinfo
 
+# Vercel CLI link folder
+**/.vercel/
+
 # Extension build output (esbuild compiles src/*.ts -> dist/*.js)
 extension/dist/
 

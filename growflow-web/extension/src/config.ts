@@ -12,6 +12,8 @@ export const STORAGE_KEYS = {
   pairingToken: "growflow_pairing_token",
   /** Buffered, not-yet-uploaded activity events. */
   pendingEvents: "growflow_pending_events",
+  /** The most recent scoring result (for the toolbar badge + popup). */
+  lastResult: "growflow_last_result",
 };
 
 /**
