@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'services/auth_service.dart';
 import 'services/productivity_scorer.dart';
 import 'services/screen_time_service.dart';
 
@@ -95,7 +96,18 @@ class _ScreenTimePageState extends State<ScreenTimePage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Productivity Score')),
+      appBar: AppBar(
+        title: const Text('Productivity Score'),
+        actions: [
+          IconButton(
+            tooltip: 'Sign out',
+            icon: const Icon(Icons.logout),
+            // Signing out flips Supabase auth state; the router listens to that
+            // and redirects back to the welcome screen automatically.
+            onPressed: () => AuthService().signOut(),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _loading ? null : _refresh,
         icon: const Icon(Icons.refresh),
