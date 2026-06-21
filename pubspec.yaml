@@ -33,6 +33,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/score/
   # Plant assets are added by the team; the PlantRenderer is format-agnostic.
   # assets:
   #   - assets/plants/
